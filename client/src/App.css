@@ -362,3 +362,98 @@ input:focus, select:focus, textarea:focus {
 .assignment-controls button {
   justify-self: start;
 }
+
+.staff-management {
+  margin-top: 28px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.staff-management h2 {
+  margin-top: 0;
+}
+
+.staff-form {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 28px;
+}
+
+.staff-form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.staff-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.staff-form button,
+.staff-card button {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.staff-form button {
+  justify-self: start;
+}
+
+.staff-form button:disabled,
+.staff-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.staff-list {
+  display: grid;
+  gap: 12px;
+}
+
+.staff-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.staff-card p {
+  margin: 5px 0;
+}
+
+.staff-card span {
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+@media (max-width: 520px) {
+  .staff-management {
+    padding: 14px;
+  }
+
+  .staff-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .staff-card button {
+    width: 100%;
+  }
+
+  .staff-form button {
+    width: 100%;
+  }
+}

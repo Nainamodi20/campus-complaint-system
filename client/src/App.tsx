@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
@@ -13,6 +12,7 @@ type Profile = {
   full_name: string;
   role: Role;
   department: string | null;
+  registration_no: string | null;
 };
 
 type MaintenanceStaff = {
@@ -21,11 +21,7 @@ type MaintenanceStaff = {
   department: string | null;
 };
 
-type Category =
-  | "electrical"
-  | "mechanical"
-  | "plumbing"
-  | "infrastructure";
+type Category = "electrical" | "mechanical" | "plumbing" | "infrastructure";
 
 type ComplaintStatus =
   | "submitted"
@@ -69,34 +65,43 @@ const emptyForm = {
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-
+  const [demoLoggedIn, setDemoLoggedIn] = useState(false);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [staffComplaints, setStaffComplaints] = useState<Complaint[]>([]);
-  const [maintenanceStaff, setMaintenanceStaff] = useState<
-    MaintenanceStaff[]
-  >([]);
+  const [maintenanceStaff, setMaintenanceStaff] = useState<MaintenanceStaff[]>(
+    [],
+  );
 
-  const [selectedComplaint, setSelectedComplaint] =
-    useState<Complaint | null>(null);
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
+    null,
+  );
   const [statusHistory, setStatusHistory] = useState<StatusHistory[]>([]);
 
-  const [selectedStaffByComplaint, setSelectedStaffByComplaint] =
-    useState<Record<string, string>>({});
-  const [assignmentNotesByComplaint, setAssignmentNotesByComplaint] =
-    useState<Record<string, string>>({});
+  const [selectedStaffByComplaint, setSelectedStaffByComplaint] = useState<
+    Record<string, string>
+  >({});
+  const [assignmentNotesByComplaint, setAssignmentNotesByComplaint] = useState<
+    Record<string, string>
+  >({});
 
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffListLoading, setStaffListLoading] = useState(false);
-  const [assigningComplaintId, setAssigningComplaintId] =
-    useState<string | null>(null);
+  const [assigningComplaintId, setAssigningComplaintId] = useState<
+    string | null
+  >(null);
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [registrationRole, setRegistrationRole] = useState<
+    "student" | "faculty"
+  >("student");
+
+  const [registrationNo, setRegistrationNo] = useState("");
   const [form, setForm] = useState(emptyForm);
 
   const [message, setMessage] = useState("");
@@ -110,9 +115,7 @@ function App() {
       setStaffComplaints(data as Complaint[]);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load staff complaints.",
+        err instanceof Error ? err.message : "Unable to load staff complaints.",
       );
     } finally {
       setStaffLoading(false);
@@ -124,11 +127,11 @@ function App() {
 
     async function loadDashboard(userId: string) {
       const [profileResult, complaintResult] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, role, department")
-          .eq("id", userId)
-          .maybeSingle(),
+supabase
+  .from("profiles")
+  .select("id, full_name, role, department, registration_no")
+  .eq("id", userId)
+  .maybeSingle(),
 
         supabase
           .from("complaints")
@@ -148,9 +151,7 @@ function App() {
       }
 
       if (complaintResult.error) {
-        setError(
-          `Complaint loading error: ${complaintResult.error.message}`,
-        );
+        setError(`Complaint loading error: ${complaintResult.error.message}`);
       } else {
         setComplaints((complaintResult.data ?? []) as Complaint[]);
       }
@@ -158,7 +159,7 @@ function App() {
       if (
         !profileResult.error &&
         profileResult.data &&
-        profileResult.data.role !== "student"
+        ["admin", "maintenance"].includes(profileResult.data.role)
       ) {
         await loadStaffDashboard(
           (await supabase.auth.getSession()).data.session?.access_token ?? "",
@@ -170,8 +171,7 @@ function App() {
 
     async function initialize() {
       try {
-        const { data, error: sessionError } =
-          await supabase.auth.getSession();
+        const { data, error: sessionError } = await supabase.auth.getSession();
 
         if (!active) return;
 
@@ -230,6 +230,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (demoLoggedIn) {
+      return;
+    }
+
     if (profile?.role !== "admin") {
       setMaintenanceStaff([]);
       return;
@@ -249,9 +253,7 @@ function App() {
       if (!active) return;
 
       if (staffError) {
-        setError(
-          `Could not load maintenance staff: ${staffError.message}`,
-        );
+        setError(`Could not load maintenance staff: ${staffError.message}`);
       } else {
         setMaintenanceStaff((data ?? []) as MaintenanceStaff[]);
       }
@@ -264,20 +266,86 @@ function App() {
     return () => {
       active = false;
     };
-  }, [profile?.role]);
+  }, [profile?.role, demoLoggedIn]);
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
     setError("");
 
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
+
     if (isRegistering) {
-      const { data, error: authError } = await supabase.auth.signUp({
-        email,
+      const normalizedName = fullName.trim();
+      const normalizedRegNo = registrationNo.trim();
+
+      if (!normalizedName) {
+        setError("Please enter your full name.");
+        return;
+      }
+
+      if (password.length < 6) {
+        setError("Password must contain at least 6 characters.");
+        return;
+      }
+
+      if (
+        registrationRole === "student" &&
+        !/^RA[A-Za-z0-9]{13}$/.test(normalizedRegNo)
+      ) {
+        setError(
+          "Enter a valid student registration number: RA followed by 13 letters or digits (15 characters total).",
+        );
+        return;
+      }
+
+      try {
+        const { data, error: authError } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: {
+              full_name: normalizedName,
+              role: registrationRole,
+              registration_no:
+                registrationRole === "student" ? normalizedRegNo : null,
+            },
+          },
+        });
+
+        if (authError) {
+          setError(authError.message);
+          return;
+        }
+
+        setFullName(normalizedName);
+        setRegistrationNo("");
+
+        if (data.session) {
+          setMessage("Account created successfully.");
+        } else {
+          setMessage(
+            "Account created. If email confirmation is enabled in Supabase, confirm your email before logging in.",
+          );
+        }
+
+        setIsRegistering(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Registration failed.");
+      }
+
+      return;
+    }
+
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
         password,
-        options: {
-          data: { full_name: fullName.trim() },
-        },
       });
 
       if (authError) {
@@ -285,42 +353,25 @@ function App() {
         return;
       }
 
-      if (!data.session) {
-        setMessage(
-          "Registration successful. Confirm your email, then log in.",
-        );
-      } else {
-        setMessage("Account created successfully.");
-      }
-
-      return;
+      setMessage("Login successful.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed.");
     }
-
-    const { error: authError } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-    if (authError) {
-      setError(authError.message);
-      return;
-    }
-
-    setMessage("Login successful.");
   }
 
   async function handleLogout() {
     setError("");
     setMessage("");
 
-    const { error: logoutError } = await supabase.auth.signOut();
-
-    if (logoutError) {
-      setError(logoutError.message);
-      return;
+    if (session) {
+      const { error: logoutError } = await supabase.auth.signOut();
+      if (logoutError) {
+        setError(logoutError.message);
+        return;
+      }
     }
 
+    setDemoLoggedIn(false);
     setSession(null);
     setProfile(null);
     setComplaints([]);
@@ -328,14 +379,35 @@ function App() {
     setMaintenanceStaff([]);
     setSelectedComplaint(null);
     setStatusHistory([]);
+    setPassword("");
   }
 
-  async function handleComplaintSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
+  async function handleComplaintSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
     setError("");
+
+    if (!session && demoLoggedIn) {
+      const demoComplaint: Complaint = {
+        id: `demo-${Date.now()}`,
+        complaint_number: `CMP-DEMO-${String(Date.now()).slice(-6)}`,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        category: form.category,
+        location_name: form.location_name.trim(),
+        priority: "medium",
+        submitted_by: profile?.id ?? "demo-student",
+        assigned_to: null,
+        status: "submitted",
+        created_at: new Date().toISOString(),
+      };
+      setComplaints((current) => [demoComplaint, ...current]);
+      setForm(emptyForm);
+      setMessage(
+        `Demo complaint ${demoComplaint.complaint_number} added locally. It was not saved to Supabase.`,
+      );
+      return;
+    }
 
     if (!session) {
       setError("Please log in before submitting a complaint.");
@@ -390,6 +462,22 @@ function App() {
     setHistoryLoading(true);
     setError("");
 
+    if (demoLoggedIn) {
+      setStatusHistory([
+        {
+          id: 1,
+          complaint_id: complaint.id,
+          old_status: null,
+          new_status: complaint.status,
+          changed_by: profile?.id ?? null,
+          notes: "Sample demo status history. This is not a database record.",
+          created_at: complaint.created_at,
+        },
+      ]);
+      setHistoryLoading(false);
+      return;
+    }
+
     try {
       const { data, error: historyError } = await supabase
         .from("complaint_status_history")
@@ -416,6 +504,13 @@ function App() {
   }
 
   async function handleAssignComplaint(complaint: Complaint) {
+    if (demoLoggedIn) {
+      setMessage(
+        "Demo mode: assignment changes are not saved. Log in with a real admin account to assign complaints in the database.",
+      );
+      return;
+    }
+
     if (profile?.role !== "admin") {
       setError("Only admins can assign complaints.");
       return;
@@ -443,8 +538,7 @@ function App() {
         {
           p_complaint_id: complaint.id,
           p_staff_id: staffId,
-          p_notes:
-            assignmentNotesByComplaint[complaint.id]?.trim() || null,
+          p_notes: assignmentNotesByComplaint[complaint.id]?.trim() || null,
         },
       );
 
@@ -478,7 +572,7 @@ function App() {
     );
   }
 
-  if (!session) {
+  if (!session && !demoLoggedIn) {
     return (
       <main className="page">
         <section className="panel">
@@ -504,6 +598,45 @@ function App() {
               </label>
             )}
 
+            {isRegistering && (
+              <>
+                <label>
+                  Account type
+                  <select
+                    value={registrationRole}
+                    onChange={(event) =>
+                      setRegistrationRole(
+                        event.target.value as "student" | "faculty",
+                      )
+                    }
+                    required
+                  >
+                    <option value="student">Student</option>
+                    <option value="faculty">Faculty</option>
+                  </select>
+                </label>
+
+                {registrationRole === "student" && (
+                  <label>
+                    Student registration number
+                    <input
+                      value={registrationNo}
+                      onChange={(event) =>
+                        setRegistrationNo(event.target.value.toUpperCase())
+                      }
+                      placeholder="e.g. RA1234567890123"
+                      minLength={15}
+                      maxLength={15}
+                      pattern="RA[A-Za-z0-9]{13}"
+                      title="Enter RA followed by exactly 13 letters or digits."
+                      autoComplete="off"
+                      required
+                    />
+                  </label>
+                )}
+              </>
+            )}
+
             <label>
               Email address
               <input
@@ -524,7 +657,6 @@ function App() {
                 autoComplete={
                   isRegistering ? "new-password" : "current-password"
                 }
-                minLength={6}
                 required
               />
             </label>
@@ -562,7 +694,7 @@ function App() {
     <main className="dashboard">
       <header className="topbar">
         <div>
-          <p className="eyebrow">CAMPUS COMPLAINT MANAGEMENT</p>
+          <p className="eyebrow">CAMPUS RESOLVE</p>
           <h1>
             {profile?.role === "student"
               ? "Student Dashboard"
@@ -574,16 +706,20 @@ function App() {
                     ? "Admin Dashboard"
                     : "Loading dashboard..."}
           </h1>
+          {profile?.role === "student" && (
+  <p className="muted">
+    Registration No: {profile.registration_no || "Not available"}
+  </p>
+)}
         </div>
-
-        <button className="secondary" type="button" onClick={handleLogout}>
-          Log out
-        </button>
       </header>
 
       <section className="welcome">
         <div>
-          <h2>Hello, {profile?.full_name || session.user.email}</h2>
+          <h2>
+            Hello,{" "}
+            {profile?.full_name || session?.user.email || email || "Demo User"}
+          </h2>
           <p className="muted">
             {profile?.role === "student"
               ? "Report a campus issue and follow its progress here."
@@ -596,8 +732,17 @@ function App() {
         </div>
 
         <span className="role">{profile?.role ?? "Role loading"}</span>
-      </section>
+        {profile?.role === "student" && (
+  <p className="muted">
+    Registration number:{" "}
+    <strong>{profile.registration_no || "Not available"}</strong>
+  </p>
+)}
 
+        <button type="button" onClick={handleLogout}>
+          Logout
+        </button>
+      </section>
       {error && <p className="error notice">{error}</p>}
       {message && <p className="success notice">{message}</p>}
 
@@ -619,7 +764,11 @@ function App() {
             <button
               className="secondary"
               type="button"
-              onClick={() => void loadStaffDashboard(session.access_token)}
+              onClick={() =>
+                session
+                  ? void loadStaffDashboard(session.access_token)
+                  : setMessage("Demo mode: showing sample complaints only.")
+              }
               disabled={staffLoading}
             >
               {staffLoading ? "Refreshing..." : "Refresh"}
@@ -667,8 +816,7 @@ function App() {
                             }))
                           }
                           disabled={
-                            assigningComplaintId !== null ||
-                            staffListLoading
+                            assigningComplaintId !== null || staffListLoading
                           }
                         >
                           <option value="">
@@ -680,27 +828,22 @@ function App() {
                           {maintenanceStaff.map((staff) => (
                             <option key={staff.id} value={staff.id}>
                               {staff.full_name}
-                              {staff.department
-                                ? ` — ${staff.department}`
-                                : ""}
+                              {staff.department ? ` — ${staff.department}` : ""}
                             </option>
                           ))}
                         </select>
                       </label>
 
-                      {!staffListLoading &&
-                        maintenanceStaff.length === 0 && (
-                          <p className="muted">
-                            No maintenance staff profiles were found.
-                          </p>
-                        )}
+                      {!staffListLoading && maintenanceStaff.length === 0 && (
+                        <p className="muted">
+                          No maintenance staff profiles were found.
+                        </p>
+                      )}
 
                       <label>
                         Assignment notes
                         <input
-                          value={
-                            assignmentNotesByComplaint[complaint.id] ?? ""
-                          }
+                          value={assignmentNotesByComplaint[complaint.id] ?? ""}
                           onChange={(event) =>
                             setAssignmentNotesByComplaint((current) => ({
                               ...current,
@@ -715,9 +858,7 @@ function App() {
                       <button
                         className="primary"
                         type="button"
-                        onClick={() =>
-                          void handleAssignComplaint(complaint)
-                        }
+                        onClick={() => void handleAssignComplaint(complaint)}
                         disabled={
                           assigningComplaintId !== null ||
                           staffListLoading ||
@@ -739,8 +880,9 @@ function App() {
         </section>
       )}
 
-      {profile?.role === "student" && (
-        <div className="dashboard-grid">
+      {(profile?.role === "student" ||
+  profile?.role === "faculty") && (
+  <div className="dashboard-grid">
           <section className="panel">
             <h2>Submit a complaint</h2>
             <p className="muted">
@@ -808,11 +950,7 @@ function App() {
                 />
               </label>
 
-              <button
-                className="primary"
-                type="submit"
-                disabled={submitting}
-              >
+              <button className="primary" type="submit" disabled={submitting}>
                 {submitting ? "Submitting..." : "Submit complaint"}
               </button>
             </form>
@@ -902,9 +1040,7 @@ function App() {
 
               <p>
                 Current status:{" "}
-                <strong>
-                  {selectedComplaint.status.replace("_", " ")}
-                </strong>
+                <strong>{selectedComplaint.status.replace("_", " ")}</strong>
               </p>
 
               <h3>Status timeline</h3>
